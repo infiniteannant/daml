@@ -171,6 +171,7 @@ class Server(
             runningTrigger.triggerParty,
             runningTrigger.triggerApplicationId,
             runningTrigger.triggerAccessToken,
+            runningTrigger.triggerRefreshToken,
             compiledPackages,
             trigger,
             ledgerConfig,
