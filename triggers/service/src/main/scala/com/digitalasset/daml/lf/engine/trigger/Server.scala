@@ -164,7 +164,7 @@ class Server(
             runningTrigger.triggerInstance,
             runningTrigger.triggerParty,
             runningTrigger.triggerApplicationId,
-            AccessToken.unsubst(runningTrigger.triggerToken),
+            runningTrigger.triggerToken,
             compiledPackages,
             trigger,
             ledgerConfig,
