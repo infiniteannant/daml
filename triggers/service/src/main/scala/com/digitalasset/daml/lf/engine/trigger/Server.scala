@@ -500,6 +500,10 @@ object Server {
       cause: String
   ) extends Message
 
+  final case class TriggerTokenExpired(
+      triggerInstance: UUID,
+  ) extends Message
+
   def apply(
       host: String,
       port: Int,
@@ -574,6 +578,10 @@ object Server {
             // the management of a supervision strategy).
             Behaviors.same
 
+          case TriggerTokenExpired(triggerInstance) =>
+            server.logTriggerStatus(triggerInstance, "stopped: access token expired")
+            Behaviors.same
+
           case GetServerBinding(replyTo) =>
             replyTo ! binding
             Behaviors.same
@@ -628,7 +636,7 @@ object Server {
           logTriggerStarted(m)
           Behaviors.same
 
-        case _: TriggerInitializationFailure | _: TriggerRuntimeFailure =>
+        case _: TriggerInitializationFailure | _: TriggerRuntimeFailure | _: TriggerTokenExpired =>
           Behaviors.unhandled
       }
 
