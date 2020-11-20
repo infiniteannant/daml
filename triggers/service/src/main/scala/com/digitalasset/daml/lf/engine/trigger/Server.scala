@@ -114,14 +114,6 @@ class Server(
       } yield startTrigger(trigger, runningTrigger))
   }
 
-  private def triggerRunnerName(triggerInstance: UUID): String =
-    triggerInstance.toString ++ "-monitor"
-
-  private def getRunner(triggerInstance: UUID): Option[ActorRef[TriggerRunner.Message]] =
-    ctx
-      .child(triggerRunnerName(triggerInstance))
-      .asInstanceOf[Option[ActorRef[TriggerRunner.Message]]]
-
   // The static config of a trigger, i.e., RunningTrigger but without a token.
   case class TriggerConfig(
       instance: UUID,
@@ -180,7 +172,7 @@ class Server(
           ),
           runningTrigger.triggerInstance.toString
         ),
-        triggerRunnerName(runningTrigger.triggerInstance)
+        Server.triggerRunnerName(runningTrigger.triggerInstance)
       ))
     JsObject(("triggerId", runningTrigger.triggerInstance.toString.toJson))
   }
@@ -189,7 +181,7 @@ class Server(
     triggerDao.removeRunningTrigger(uuid) map {
       case false => None
       case true =>
-        getRunner(uuid) foreach { runner =>
+        Server.getRunner(uuid) foreach { runner =>
           runner ! TriggerRunner.Stop
         }
         // If we couldn't find the runner then there is nothing to stop anyway,
@@ -209,7 +201,7 @@ class Server(
     triggerDao.getRunningTrigger(uuid).flatMap {
       case None => Future.successful(None)
       case Some(t) =>
-        getRunner(uuid) match {
+        Server.getRunner(uuid) match {
           case None =>
             Future.successful(Some(Result(Stopped, t.triggerName, t.triggerParty).toJson))
           case Some(act) =>
@@ -510,6 +502,15 @@ object Server {
       result: Try[Unit],
   ) extends Message
 
+  private def triggerRunnerName(triggerInstance: UUID): String =
+    triggerInstance.toString ++ "-monitor"
+
+  private def getRunner(triggerInstance: UUID)(
+      implicit ctx: ActorContext[Server.Message]): Option[ActorRef[TriggerRunner.Message]] =
+    ctx
+      .child(Server.triggerRunnerName(triggerInstance))
+      .asInstanceOf[Option[ActorRef[TriggerRunner.Message]]]
+
   def apply(
       host: String,
       port: Int,
@@ -624,9 +625,7 @@ object Server {
               refreshToken = RefreshToken.subst(authorize.refreshToken)
               // Update and restart the trigger
               _ <- dao.updateRunningTriggerToken(triggerInstance, accessToken, refreshToken)
-              triggerRunner <- ctx
-                .child(triggerInstance.toString ++ "-monitor")
-                .asInstanceOf[Option[ActorRef[TriggerRunner.Message]]] match {
+              triggerRunner <- getRunner(triggerInstance) match {
                 case Some(runner) => Future.successful(runner)
                 case None =>
                   Future.failed(new RuntimeException(s"No trigger runner for $triggerInstance"))
