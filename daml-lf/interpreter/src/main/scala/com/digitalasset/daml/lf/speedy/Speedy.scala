@@ -157,6 +157,8 @@ private[lf] object Speedy {
          not the other way around.
        */
       val ledgerMode: LedgerMode,
+      /* envBound is Some(bound) when testing that execution is in bounded space */
+      val envBound: Option[Int]
   ) {
 
     /* kont manipulation... */
@@ -352,7 +354,7 @@ private[lf] object Speedy {
     def setExpressionToEvaluate(expr: SExpr): Unit = {
       ctrl = expr
       kontStack = initialKontStack()
-      env = emptyEnv
+      env = emptyEnv(envBound)
       envBase = 0
       steps = 0
       track = Instrumentation()
@@ -744,7 +746,7 @@ private[lf] object Speedy {
         returnValue = null,
         frame = null,
         actuals = null,
-        env = emptyEnv,
+        env = emptyEnv(None),
         envBase = 0,
         kontStack = initialKontStack(),
         lastLocation = None,
@@ -765,6 +767,7 @@ private[lf] object Speedy {
         steps = 0,
         track = Instrumentation(),
         profile = new Profile(),
+        envBound = None,
       )
 
     @throws[PackageNotFound]
@@ -804,13 +807,14 @@ private[lf] object Speedy {
         compiledPackages: CompiledPackages,
         expr: SExpr,
         traceLog: TraceLog = RingBufferTraceLog(damlTraceLog, 100),
+        envBound: Option[Int] = None,
     ): Machine =
       new Machine(
         ctrl = expr,
         returnValue = null,
         frame = null,
         actuals = null,
-        env = emptyEnv,
+        env = emptyEnv(envBound),
         envBase = 0,
         kontStack = initialKontStack(),
         lastLocation = None,
@@ -820,6 +824,7 @@ private[lf] object Speedy {
         steps = 0,
         track = Instrumentation(),
         profile = new Profile(),
+        envBound = envBound,
       )
 
     @throws[PackageNotFound]
@@ -828,8 +833,12 @@ private[lf] object Speedy {
     def fromPureExpr(
         compiledPackages: CompiledPackages,
         expr: Expr,
+        envBound: Option[Int] = None,
     ): Machine =
-      fromPureSExpr(compiledPackages, compiledPackages.compiler.unsafeCompile(expr))
+      fromPureSExpr(
+        compiledPackages,
+        compiledPackages.compiler.unsafeCompile(expr),
+        envBound = envBound)
 
   }
 
@@ -838,7 +847,22 @@ private[lf] object Speedy {
   // NOTE(JM): We use ArrayList instead of ArrayBuffer as
   // it is significantly faster.
   private[speedy] type Env = util.ArrayList[SValue]
-  private[speedy] def emptyEnv: Env = new util.ArrayList[SValue](512)
+
+  private[speedy] def emptyEnv(envBound: Option[Int]): Env = envBound match {
+    case None =>
+      new util.ArrayList[SValue](512) // Normal operation: data-structure expands as required
+    case Some(bound) =>
+      new BoundedArrayListValue(bound) // Testing: this is a hard bound
+  }
+
+  class BoundedArrayListValue(bound: Int) extends util.ArrayList[SValue](512) {
+    override def add(x: SValue): Boolean = {
+      if (size >= bound) {
+        crash(s"BoundedArrayListValue, exceeded bound of $bound")
+      }
+      super.add(x)
+    }
+  }
 
   //
   // Kontinuation
